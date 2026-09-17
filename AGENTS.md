@@ -184,21 +184,30 @@ A phase is complete only when its implementation, tests, understanding, and docu
 
 ## Phase Completion Documentation
 
-After completing each roadmap phase, create a dedicated Markdown document for that phase.
+After completing each roadmap phase, create dedicated Markdown documents for that phase in **both English and Traditional Chinese**.
 
 Phase documentation should be stored under:
 
 `docs/phases/`
 
-Use a clear naming convention such as:
+Use the following naming convention:
 
 ```text
 docs/phases/phase-01-llm-abstraction.md
+docs/phases/phase-01-llm-abstraction.zh.md
+
 docs/phases/phase-02-multiple-providers.md
+docs/phases/phase-02-multiple-providers.zh.md
+
 docs/phases/phase-03-streaming.md
+docs/phases/phase-03-streaming.zh.md
 ```
 
-The exact filename should clearly identify the phase.
+The English document uses the normal `.md` suffix. The Traditional Chinese document uses `.zh.md`.
+
+Do **not** use `zh-TW` in filenames.
+
+The English and Chinese documents should describe the same phase, concepts, implementation mapping, tests, design decisions, limitations, and interview questions. They should be kept synchronized with the actual implementation.
 
 ---
 
@@ -206,7 +215,9 @@ The exact filename should clearly identify the phase.
 
 Each phase document should explain the knowledge gained during that phase.
 
-At minimum, the document should contain:
+Both the English and Traditional Chinese versions must contain the same required sections.
+
+At minimum, each document should contain:
 
 ### 1. Learning Objectives
 
@@ -327,7 +338,9 @@ Before declaring a phase complete, verify:
 - [ ] Relevant tests pass.
 - [ ] Important design decisions have been analyzed.
 - [ ] Limitations have been identified.
-- [ ] Phase documentation has been created.
+- [ ] English phase documentation has been created.
+- [ ] Traditional Chinese phase documentation has been created.
+- [ ] Both language versions accurately describe the same implementation.
 - [ ] Important concepts are mapped to source files.
 - [ ] Important concepts are mapped to specific classes/functions where possible.
 - [ ] Relevant tests are referenced.
