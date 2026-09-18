@@ -4,7 +4,7 @@ from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
 from ai_agent.core.response import ChatResponse, Usage
-from ai_agent.providers.http import JsonResponse, HttpTransport, send_json
+from ai_agent.providers.http import HttpTransport, JsonResponse, send_json
 
 
 class OpenAIProvider:
@@ -34,8 +34,10 @@ class OpenAIProvider:
         return self._parse_response(data)
 
     def _build_payload(self, request: ChatRequest) -> dict[str, object]:
-        # English: OpenAI accepts the provider-independent message roles as input items.
-        # 中文：OpenAI 可以接收我們共用的 message role，因此這裡主要做格式轉換。
+        self._validate_messages(request.messages)
+
+        # English: OpenAI accepts these common roles as input items.
+        # 中文：OpenAI 可以接收這些共用 role，因此這裡只需要做格式轉換。
         payload: dict[str, object] = {
             "model": request.config.model,
             "input": [
@@ -50,6 +52,16 @@ class OpenAIProvider:
             payload["max_output_tokens"] = request.config.max_tokens
 
         return payload
+
+    @staticmethod
+    def _validate_messages(messages: list[Message]) -> None:
+        unsupported_roles = {
+            message.role for message in messages if message.role == "tool"
+        }
+        if unsupported_roles:
+            raise InvalidRequestError(
+                "OpenAI Responses API tool messages require provider-specific mapping"
+            )
 
     def _parse_response(self, data: JsonResponse) -> ChatResponse:
         output_text = data.get("output_text")
