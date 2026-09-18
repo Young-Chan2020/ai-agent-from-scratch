@@ -1,10 +1,17 @@
 import os
+from collections.abc import Iterator
 
 from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
-from ai_agent.core.response import ChatResponse, Usage
-from ai_agent.providers.http import HttpTransport, JsonResponse, send_json
+from ai_agent.core.response import ChatChunk, ChatResponse, Usage
+from ai_agent.providers.http import (
+    HttpTransport,
+    JsonResponse,
+    StreamTransport,
+    send_json,
+    send_sse_json,
+)
 
 
 class OpenAIProvider:
@@ -15,6 +22,7 @@ class OpenAIProvider:
         api_key: str | None = None,
         *,
         transport: HttpTransport | None = None,
+        stream_transport: StreamTransport | None = None,
         endpoint: str = "https://api.openai.com/v1/responses",
     ) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -23,6 +31,7 @@ class OpenAIProvider:
 
         self.endpoint = endpoint
         self._transport: HttpTransport = transport or send_json
+        self._stream_transport: StreamTransport = stream_transport or send_sse_json
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         payload = self._build_payload(request)
@@ -32,6 +41,19 @@ class OpenAIProvider:
             payload,
         )
         return self._parse_response(data)
+
+    def stream(self, request: ChatRequest) -> Iterator[ChatChunk]:
+        payload = self._build_payload(request)
+        payload["stream"] = True
+
+        for event in self._stream_transport(
+            self.endpoint,
+            {"Authorization": f"Bearer {self.api_key}"},
+            payload,
+        ):
+            chunk = self._parse_stream_event(event)
+            if chunk is not None:
+                yield chunk
 
     def _build_payload(self, request: ChatRequest) -> dict[str, object]:
         self._validate_messages(request.messages)
@@ -55,10 +77,7 @@ class OpenAIProvider:
 
     @staticmethod
     def _validate_messages(messages: list[Message]) -> None:
-        unsupported_roles = {
-            message.role for message in messages if message.role == "tool"
-        }
-        if unsupported_roles:
+        if any(message.role == "tool" for message in messages):
             raise InvalidRequestError(
                 "OpenAI Responses API tool messages require provider-specific mapping"
             )
@@ -75,6 +94,30 @@ class OpenAIProvider:
             usage=usage,
             raw=data,
         )
+
+    @staticmethod
+    def _parse_stream_event(event: JsonResponse) -> ChatChunk | None:
+        event_type = event.get("type")
+
+        if event_type == "response.output_text.delta":
+            delta = event.get("delta")
+            if isinstance(delta, str):
+                return ChatChunk(content=delta, raw=event)
+            return None
+
+        if event_type == "response.completed":
+            response = event.get("response")
+            if isinstance(response, dict):
+                usage = OpenAIProvider._parse_usage(response.get("usage"))
+                status = response.get("status")
+                return ChatChunk(
+                    finish_reason=str(status) if status is not None else "completed",
+                    usage=usage,
+                    raw=event,
+                )
+            return ChatChunk(finish_reason="completed", raw=event)
+
+        return None
 
     @staticmethod
     def _extract_output_text(data: JsonResponse) -> str:

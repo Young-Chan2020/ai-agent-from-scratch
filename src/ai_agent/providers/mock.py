@@ -1,6 +1,8 @@
+from collections.abc import Iterator
+
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
-from ai_agent.core.response import ChatResponse, Usage
+from ai_agent.core.response import ChatChunk, ChatResponse, Usage
 
 
 class MockProvider:
@@ -22,3 +24,15 @@ class MockProvider:
             finish_reason="stop",
             usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
         )
+
+    def stream(self, request: ChatRequest) -> Iterator[ChatChunk]:
+        # English: Streaming yields partial output so callers can consume tokens incrementally.
+        # 中文：Streaming 逐段 yield 輸出，讓呼叫端可以逐步消費模型產生的內容。
+        self.calls.append(request)
+
+        words = self.response_text.split(" ")
+        for index, word in enumerate(words):
+            content = word if index == 0 else f" {word}"
+            yield ChatChunk(content=content)
+
+        yield ChatChunk(content="", finish_reason="stop")
