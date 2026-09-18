@@ -31,14 +31,15 @@ The provider-specific details stay behind the adapter.
 
 ### 2. Provider Differences Are Real
 
-OpenAI and Anthropic do not expose identical APIs.
+OpenAI, Anthropic, and DeepSeek do not expose identical APIs.
 
 This phase uses:
 
 - OpenAI Responses API
 - Anthropic Messages API
+- DeepSeek Chat Completions API
 
-For example, OpenAI uses an input structure and reports output_text / usage fields, while Anthropic uses messages, a separate system field, content blocks, and a different usage shape.
+For example, OpenAI uses an input structure and reports output_text / usage fields, while Anthropic uses messages, a separate system field, content blocks, and a different usage shape. DeepSeek uses an OpenAI-compatible Chat Completions format with its own endpoint and usage fields.
 
 The abstraction therefore does not try to pretend that all providers are identical.
 
@@ -117,10 +118,10 @@ becomes:
                             │
               ┌─────────────┼─────────────┐
               ▼             ▼             ▼
-        MockProvider   OpenAIProvider  AnthropicProvider
-                            │             │
-                            ▼             ▼
-                     Responses API   Messages API
+        MockProvider   OpenAIProvider  AnthropicProvider  DeepSeekProvider
+                            │             │                  │
+                            ▼             ▼                  ▼
+                     Responses API   Messages API   Chat Completions API
 ~~~
 
 The common contract remains:
@@ -144,6 +145,8 @@ The provider adapters own API-specific translation.
 | Anthropic request translation | src/ai_agent/providers/anthropic.py | AnthropicProvider.chat() |
 | Anthropic system-message mapping | src/ai_agent/providers/anthropic.py | AnthropicProvider._split_system_messages() |
 | Anthropic response normalization | src/ai_agent/providers/anthropic.py | AnthropicProvider._parse_response() |
+| DeepSeek request translation | src/ai_agent/providers/deepseek.py | DeepSeekProvider._build_payload() |
+| DeepSeek response normalization | src/ai_agent/providers/deepseek.py | DeepSeekProvider._parse_response() |
 | Common response | src/ai_agent/core/response.py | ChatResponse, Usage |
 | Normalized provider errors | src/ai_agent/core/errors.py | InvalidRequestError, ProviderUnavailableError |
 
@@ -167,6 +170,21 @@ These tests verify that the OpenAI adapter:
 - translates model configuration
 - normalizes the response
 - still satisfies the common Provider protocol
+
+### DeepSeek
+
+~~~text
+tests/providers/test_deepseek.py::test_deepseek_provider_builds_provider_specific_request
+tests/providers/test_deepseek.py::test_deepseek_provider_matches_provider_protocol
+~~~
+
+These tests verify that the DeepSeek adapter:
+
+- uses the expected Chat Completions endpoint
+- sends the API key in the expected header
+- maps the common message and model configuration
+- normalizes DeepSeek usage fields
+- satisfies the common Provider protocol
 
 ### Anthropic
 
@@ -293,6 +311,15 @@ OpenAIProvider._build_payload()
 OpenAIProvider._parse_response()
       ↓
 tests/providers/test_openai.py
+
+DeepSeek Translation
+      ↓
+src/ai_agent/providers/deepseek.py
+      ↓
+DeepSeekProvider._build_payload()
+DeepSeekProvider._parse_response()
+      ↓
+tests/providers/test_deepseek.py
 
 Anthropic Translation
       ↓
