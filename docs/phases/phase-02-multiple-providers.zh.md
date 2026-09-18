@@ -31,14 +31,15 @@ Provider-specific details 則留在 adapter 裡面。
 
 ### 2. Provider Differences Are Real
 
-OpenAI 與 Anthropic 並不是完全相同的 API。
+OpenAI、Anthropic 與 DeepSeek 並不是完全相同的 API。
 
 本課使用：
 
 - OpenAI Responses API
 - Anthropic Messages API
+- DeepSeek Chat Completions API
 
-例如 OpenAI 使用 input 結構，並提供 output_text / usage 等欄位；Anthropic 使用 messages、獨立的 system 欄位、content blocks，以及不同的 usage 格式。
+例如 OpenAI 使用 input 結構，並提供 output_text / usage 等欄位；Anthropic 使用 messages、獨立的 system 欄位、content blocks，以及不同的 usage 格式；DeepSeek 則使用 OpenAI-compatible 的 Chat Completions 格式，但 endpoint 與 usage 欄位不同。
 
 因此 abstraction 不應該假裝所有 Provider 都完全一樣。
 
@@ -117,10 +118,10 @@ MockProvider
                             │
               ┌─────────────┼─────────────┐
               ▼             ▼             ▼
-        MockProvider   OpenAIProvider  AnthropicProvider
-                            │             │
-                            ▼             ▼
-                     Responses API   Messages API
+        MockProvider   OpenAIProvider  AnthropicProvider  DeepSeekProvider
+                            │             │                  │
+                            ▼             ▼                  ▼
+                     Responses API   Messages API   Chat Completions API
 ~~~
 
 共同 contract 仍然是：
@@ -144,6 +145,8 @@ Provider adapter 負責所有 API-specific translation。
 | Anthropic request translation | src/ai_agent/providers/anthropic.py | AnthropicProvider.chat() |
 | Anthropic system-message mapping | src/ai_agent/providers/anthropic.py | AnthropicProvider._split_system_messages() |
 | Anthropic response normalization | src/ai_agent/providers/anthropic.py | AnthropicProvider._parse_response() |
+| DeepSeek request translation | src/ai_agent/providers/deepseek.py | DeepSeekProvider._build_payload() |
+| DeepSeek response normalization | src/ai_agent/providers/deepseek.py | DeepSeekProvider._parse_response() |
 | Common response | src/ai_agent/core/response.py | ChatResponse, Usage |
 | Normalized provider errors | src/ai_agent/core/errors.py | InvalidRequestError, ProviderUnavailableError |
 
@@ -167,6 +170,21 @@ tests/providers/test_openai.py::test_openai_provider_matches_provider_protocol
 - 正確轉換 model configuration
 - 正確解析 response
 - 仍然符合共同的 Provider protocol
+
+### DeepSeek
+
+~~~text
+tests/providers/test_deepseek.py::test_deepseek_provider_builds_provider_specific_request
+tests/providers/test_deepseek.py::test_deepseek_provider_matches_provider_protocol
+~~~
+
+這些測試驗證 DeepSeek adapter：
+
+- 使用正確的 Chat Completions endpoint
+- 使用正確 authentication header
+- 正確 mapping common message 與 model configuration
+- 正確 normalization DeepSeek usage fields
+- 符合共同 Provider protocol
 
 ### Anthropic
 
@@ -293,6 +311,15 @@ OpenAIProvider._build_payload()
 OpenAIProvider._parse_response()
       ↓
 tests/providers/test_openai.py
+
+DeepSeek Translation
+      ↓
+src/ai_agent/providers/deepseek.py
+      ↓
+DeepSeekProvider._build_payload()
+DeepSeekProvider._parse_response()
+      ↓
+tests/providers/test_deepseek.py
 
 Anthropic Translation
       ↓
