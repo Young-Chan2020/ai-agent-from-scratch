@@ -4,7 +4,7 @@ from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
 from ai_agent.core.response import ChatResponse, Usage
-from ai_agent.providers.http import JsonResponse, HttpTransport, send_json
+from ai_agent.providers.http import HttpTransport, JsonResponse, send_json
 
 
 class AnthropicProvider:
@@ -39,10 +39,12 @@ class AnthropicProvider:
         if system_messages:
             payload["system"] = "\n\n".join(system_messages)
 
-        # English: Provider configuration is not always portable across APIs.
-        # 中文：不同 Provider 的參數規則不一定相同，因此共用設定不能直接全部原樣傳送。
+        # English: Anthropic has provider-specific restrictions on temperature for newer models.
+        # 中文：Anthropic 對新版模型的 temperature 有 Provider-specific 限制，因此這裡明確拒絕不相容設定。
         if request.config.temperature is not None:
-            payload["temperature"] = request.config.temperature
+            raise InvalidRequestError(
+                "AnthropicProvider does not map temperature in this phase"
+            )
 
         data = self._transport(
             self.endpoint,
@@ -62,8 +64,13 @@ class AnthropicProvider:
             message.content for message in messages if message.role == "system"
         ]
         conversation = [
-            message for message in messages if message.role != "system"
+            message for message in messages if message.role not in {"system", "tool"}
         ]
+
+        if any(message.role == "tool" for message in messages):
+            raise InvalidRequestError(
+                "Anthropic tool messages require provider-specific mapping"
+            )
 
         if not conversation:
             raise InvalidRequestError(
