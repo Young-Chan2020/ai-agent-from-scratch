@@ -182,6 +182,40 @@ A phase is complete only when its implementation, tests, understanding, and docu
 
 ---
 
+## Phase Branch Workflow
+
+Each roadmap phase must be developed on its own dedicated Git branch.
+
+Use the following workflow:
+
+1. Start from the latest `main` branch.
+2. Create a branch named `phase/<phase-number>-<short-name>`.
+3. Implement the phase, tests, and documentation on that branch.
+4. The phase branch must contain all previous phases plus the new phase.
+5. Review the implementation and diff before merging.
+6. Merge the completed phase branch into `main`.
+7. Preserve the phase branch after merging so it remains a historical snapshot of that learning stage.
+
+Example:
+
+```text
+main
+  │
+  ├── phase/01-llm-abstraction
+  │
+  ├── phase/02-multiple-providers
+  │
+  ├── phase/03-streaming
+  │
+  └── ...
+```
+
+A phase branch is a complete project snapshot at that learning stage, not a branch containing only the files newly introduced by that phase.
+
+The branch history should make it easy to review how the project evolved from one learning phase to the next.
+
+---
+
 ## Phase Completion Documentation
 
 After completing each roadmap phase, create dedicated Markdown documents for that phase in **both English and Traditional Chinese**.
