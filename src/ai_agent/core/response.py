@@ -13,6 +13,16 @@ class Usage:
 
 
 @dataclass(frozen=True)
+class ChatChunk:
+    """A provider-independent piece of a streaming LLM response."""
+
+    content: str = ""
+    finish_reason: str | None = None
+    usage: Usage | None = None
+    raw: object | None = None
+
+
+@dataclass(frozen=True)
 class ChatResponse:
     """A provider-independent response returned by an LLM."""
 
