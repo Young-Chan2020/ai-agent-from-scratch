@@ -2,7 +2,7 @@ import pytest
 
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
-from ai_agent.core.response import Usage
+from ai_agent.core.response import ChatChunk, Usage
 
 
 def test_message_keeps_provider_independent_fields() -> None:
@@ -36,3 +36,23 @@ def test_usage_tracks_token_counts() -> None:
     usage = Usage(input_tokens=10, output_tokens=5, total_tokens=15)
 
     assert usage.total_tokens == 15
+
+
+def test_chat_chunk_represents_partial_output() -> None:
+    chunk = ChatChunk(content="Hello")
+
+    assert chunk.content == "Hello"
+    assert chunk.finish_reason is None
+    assert chunk.usage is None
+
+
+def test_chat_chunk_can_carry_completion_metadata() -> None:
+    chunk = ChatChunk(
+        finish_reason="stop",
+        usage=Usage(input_tokens=10, output_tokens=5, total_tokens=15),
+    )
+
+    assert chunk.content == ""
+    assert chunk.finish_reason == "stop"
+    assert chunk.usage is not None
+    assert chunk.usage.total_tokens == 15
