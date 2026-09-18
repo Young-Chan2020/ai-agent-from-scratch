@@ -1,5 +1,7 @@
+import pytest
 from typing import cast
 
+from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
 from ai_agent.providers.anthropic import AnthropicProvider
@@ -45,6 +47,20 @@ def test_anthropic_provider_separates_system_prompt() -> None:
     assert response.message.content == "hello from anthropic"
     assert response.usage is not None
     assert response.usage.total_tokens == 18
+
+
+def test_anthropic_provider_rejects_unmapped_temperature() -> None:
+    provider = AnthropicProvider(
+        api_key="test-key",
+        transport=lambda url, headers, payload: {},
+    )
+    request = ChatRequest(
+        messages=[Message(role="user", content="Hello")],
+        config=ModelConfig(model="test-model", temperature=0.2),
+    )
+
+    with pytest.raises(InvalidRequestError, match="temperature"):
+        provider.chat(request)
 
 
 def test_anthropic_provider_matches_provider_protocol() -> None:
