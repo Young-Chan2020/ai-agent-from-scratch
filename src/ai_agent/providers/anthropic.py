@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
-from ai_agent.core.response import ChatChunk, ChatResponse, Usage
+from ai_agent.core.response import ChatChunk, ChatResponse, ToolCall, Usage
 from ai_agent.providers.http import (
     HttpTransport,
     JsonResponse,
@@ -183,14 +183,21 @@ class AnthropicProvider:
             raise InvalidRequestError("Anthropic response did not contain content")
 
         texts: list[str] = []
+        tool_calls: list[ToolCall] = []
         for block in content:
             if not isinstance(block, dict):
                 continue
             if block.get("type") == "text" and isinstance(block.get("text"), str):
                 texts.append(block["text"])
-
-        if not texts:
-            raise InvalidRequestError("Anthropic response did not contain text content")
+            if block.get("type") == "tool_use":
+                call_id = block.get("id")
+                name = block.get("name")
+                input_value = block.get("input")
+                if not isinstance(call_id, str) or not isinstance(name, str):
+                    raise InvalidRequestError("Anthropic response contained an invalid tool call")
+                if not isinstance(input_value, dict):
+                    raise InvalidRequestError("Anthropic tool input must be an object")
+                tool_calls.append(ToolCall(id=call_id, name=name, arguments=input_value))
 
         usage = data.get("usage")
         parsed_usage = None
@@ -208,5 +215,6 @@ class AnthropicProvider:
             message=Message(role="assistant", content="".join(texts)),
             finish_reason=str(data.get("stop_reason") or "stop"),
             usage=parsed_usage,
+            tool_calls=tool_calls or None,
             raw=data,
         )
