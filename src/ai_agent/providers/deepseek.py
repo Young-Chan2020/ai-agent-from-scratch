@@ -1,10 +1,11 @@
+import json
 import os
 from collections.abc import Iterator
 
 from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
-from ai_agent.core.response import ChatChunk, ChatResponse, Usage
+from ai_agent.core.response import ChatChunk, ChatResponse, ToolCall, Usage
 from ai_agent.providers.http import (
     HttpTransport,
     JsonResponse,
@@ -149,14 +150,18 @@ class DeepSeekProvider:
             raise InvalidRequestError("DeepSeek response did not contain a message")
 
         content = message.get("content")
+        if content is None:
+            content = ""
         if not isinstance(content, str):
-            raise InvalidRequestError("DeepSeek response did not contain text content")
+            raise InvalidRequestError("DeepSeek response contained invalid text content")
 
+        tool_calls = DeepSeekProvider._parse_tool_calls(message.get("tool_calls"))
         usage = DeepSeekProvider._parse_usage(data.get("usage"))
         return ChatResponse(
             message=Message(role="assistant", content=content),
             finish_reason=str(choice.get("finish_reason") or "stop"),
             usage=usage,
+            tool_calls=tool_calls or None,
             raw=data,
         )
 
@@ -180,3 +185,30 @@ class DeepSeekProvider:
             output_tokens=output_tokens,
             total_tokens=total_tokens,
         )
+
+    @staticmethod
+    def _parse_tool_calls(value: object) -> list[ToolCall]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise InvalidRequestError("DeepSeek tool_calls must be an array")
+        calls: list[ToolCall] = []
+        for item in value:
+            if not isinstance(item, dict):
+                raise InvalidRequestError("DeepSeek tool call must be an object")
+            call_id = item.get("id")
+            function = item.get("function")
+            if not isinstance(call_id, str) or not isinstance(function, dict):
+                raise InvalidRequestError("DeepSeek response contained an invalid tool call")
+            name = function.get("name")
+            arguments = function.get("arguments")
+            if not isinstance(name, str) or not isinstance(arguments, str):
+                raise InvalidRequestError("DeepSeek tool call function is invalid")
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise InvalidRequestError("DeepSeek tool arguments were not valid JSON") from exc
+            if not isinstance(parsed, dict):
+                raise InvalidRequestError("DeepSeek tool arguments must be a JSON object")
+            calls.append(ToolCall(id=call_id, name=name, arguments=parsed))
+        return calls
