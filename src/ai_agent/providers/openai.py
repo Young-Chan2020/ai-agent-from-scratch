@@ -1,10 +1,11 @@
+import json
 import os
 from collections.abc import Iterator
 
 from ai_agent.core.errors import InvalidRequestError
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest
-from ai_agent.core.response import ChatChunk, ChatResponse, Usage
+from ai_agent.core.response import ChatChunk, ChatResponse, ToolCall, Usage
 from ai_agent.providers.http import (
     HttpTransport,
     JsonResponse,
@@ -119,6 +120,7 @@ class OpenAIProvider:
             message=Message(role="assistant", content=output_text),
             finish_reason=str(data.get("status", "completed")),
             usage=usage,
+            tool_calls=self._extract_tool_calls(data) or None,
             raw=data,
         )
 
@@ -147,6 +149,29 @@ class OpenAIProvider:
         return None
 
     @staticmethod
+    def _extract_tool_calls(data: JsonResponse) -> list[ToolCall]:
+        output = data.get("output")
+        if not isinstance(output, list):
+            return []
+        calls: list[ToolCall] = []
+        for item in output:
+            if not isinstance(item, dict) or item.get("type") != "function_call":
+                continue
+            call_id = item.get("call_id")
+            name = item.get("name")
+            arguments = item.get("arguments")
+            if not all(isinstance(value, str) for value in (call_id, name, arguments)):
+                raise InvalidRequestError("OpenAI response contained an invalid tool call")
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise InvalidRequestError("OpenAI tool arguments were not valid JSON") from exc
+            if not isinstance(parsed, dict):
+                raise InvalidRequestError("OpenAI tool arguments must be a JSON object")
+            calls.append(ToolCall(id=call_id, name=name, arguments=parsed))
+        return calls
+
+    @staticmethod
     def _extract_output_text(data: JsonResponse) -> str:
         output = data.get("output")
         if not isinstance(output, list):
@@ -166,8 +191,6 @@ class OpenAIProvider:
                 if isinstance(text, str):
                     texts.append(text)
 
-        if not texts:
-            raise InvalidRequestError("OpenAI response did not contain output text")
         return "".join(texts)
 
     @staticmethod
