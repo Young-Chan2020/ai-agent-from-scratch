@@ -73,6 +73,19 @@ class OpenAIProvider:
         if request.config.max_tokens is not None:
             payload["max_output_tokens"] = request.config.max_tokens
 
+        if request.structured_output is not None:
+            structured = request.structured_output
+            # English: OpenAI supports JSON Schema directly, so the adapter can pass the schema natively.
+            # 中文：OpenAI 原生支援 JSON Schema，因此 Adapter 可以直接把 schema 傳給 Provider。
+            payload["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": structured.name,
+                    "schema": structured.schema,
+                    "strict": structured.strict,
+                }
+            }
+
         return payload
 
     @staticmethod
