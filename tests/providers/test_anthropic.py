@@ -155,3 +155,31 @@ def test_anthropic_provider_maps_tool_definition() -> None:
             "input_schema": tool.parameters,
         }
     ]
+
+def test_anthropic_provider_parses_tool_call() -> None:
+    from ai_agent.core.response import ToolCall
+
+    provider = AnthropicProvider(
+        api_key="test-key",
+        transport=lambda url, headers, payload: {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu-1",
+                    "name": "get_weather",
+                    "input": {"city": "Los Angeles"},
+                }
+            ],
+            "stop_reason": "tool_use",
+        },
+    )
+    response = provider.chat(
+        ChatRequest(
+            messages=[Message(role="user", content="weather?")],
+            config=ModelConfig(model="test"),
+        )
+    )
+
+    assert response.tool_calls == [
+        ToolCall(id="toolu-1", name="get_weather", arguments={"city": "Los Angeles"})
+    ]
