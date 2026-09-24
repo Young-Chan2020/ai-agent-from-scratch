@@ -1,3 +1,5 @@
+from typing import cast
+
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
 from ai_agent.core.structured import StructuredOutputConfig
