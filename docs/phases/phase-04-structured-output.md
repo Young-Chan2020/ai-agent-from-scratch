@@ -92,6 +92,153 @@ Structured output asks the model to return data in a format. Tool calling asks t
 
 Tests inject fake transports, so no real API calls are required.
 
+## Practical Examples
+
+The following examples show the complete flow from request to response. The important point is that the schema describes the **shape of the response**; it is not the response itself.
+
+### Example 1 — Extract structured data
+
+The application asks the LLM to extract information from a sentence:
+
+```python
+ChatRequest(
+    messages=[
+        Message(
+            role="user",
+            content="Albert Einstein was born in 1879 and was a physicist.",
+        )
+    ],
+    config=ModelConfig(model="gpt-5"),
+    structured_output=StructuredOutputConfig(
+        name="person",
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "birth_year": {"type": "integer"},
+                "occupation": {"type": "string"},
+            },
+            "required": ["name", "birth_year", "occupation"],
+        },
+    ),
+)
+```
+
+The response is still carried as text in `ChatResponse.message.content`, but the text is expected to contain data matching the schema:
+
+```json
+{
+    "name": "Albert Einstein",
+    "birth_year": 1879,
+    "occupation": "physicist"
+}
+```
+
+Here, the schema defines **what information the application wants**, while the response contains the actual values.
+
+### Example 2 — Structured output can still contain natural language
+
+Structured output does not mean that every field must be machine-like values. A schema can explicitly provide a string field for a natural-language description:
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "birth_year": {"type": "integer"},
+    },
+    "required": ["name", "description", "birth_year"],
+}
+```
+
+A corresponding response could be:
+
+```json
+{
+    "name": "Albert Einstein",
+    "description": "Albert Einstein was a famous physicist best known for developing the theory of relativity.",
+    "birth_year": 1879
+}
+```
+
+The natural-language sentence is in the **response**, inside the `description` field. It is not part of the schema itself.
+
+### Example 3 — Structured output for an Agent
+
+Structured output becomes especially useful when the response is consumed by program logic rather than shown directly to a user.
+
+For example, an Agent may ask the LLM to convert a user's request into data for a weather tool:
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "city": {"type": "string"},
+        "unit": {"type": "string"},
+    },
+    "required": ["city", "unit"],
+}
+```
+
+Request:
+
+```text
+User: What's the weather in Los Angeles?
+```
+
+Response:
+
+```json
+{
+    "city": "Los Angeles",
+    "unit": "celsius"
+}
+```
+
+The Agent can then consume the parsed data:
+
+```python
+weather_tool(city="Los Angeles", unit="celsius")
+```
+
+In this case, the structured response is **machine-facing**, not a user-facing answer. This is one reason structured output is an important building block for Agent systems.
+
+### Example 4 — Natural language and structured data together
+
+A schema can also contain both machine-oriented fields and a natural-language answer:
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "temperature": {"type": "number"},
+        "rain_probability": {"type": "number"},
+        "bring_umbrella": {"type": "boolean"},
+    },
+    "required": [
+        "answer",
+        "temperature",
+        "rain_probability",
+        "bring_umbrella",
+    ],
+}
+```
+
+Response:
+
+```json
+{
+    "answer": "It looks fairly dry today, so you probably won't need an umbrella.",
+    "temperature": 22.5,
+    "rain_probability": 10,
+    "bring_umbrella": false
+}
+```
+
+This illustrates an important design idea: **structured output controls the interface between the LLM and the application; it does not remove the LLM's ability to generate natural language.**
+
 ## Design Decisions
 ### Why keep the schema in the common request?
 The Agent expresses its intent once. Provider adapters translate that intent into each vendor's API format.
