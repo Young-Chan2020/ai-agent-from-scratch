@@ -60,3 +60,36 @@ def test_openai_provider_streams_output_text_deltas() -> None:
     assert chunks[-1].finish_reason == "completed"
     assert chunks[-1].usage is not None
     assert chunks[-1].usage.total_tokens == 5
+
+
+def test_openai_provider_maps_structured_output_to_json_schema() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transport(url: str, headers: dict[str, str], payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {
+            "output_text": '{"name":"Alice","age":30}',
+            "status": "completed",
+        }
+
+    provider = OpenAIProvider(api_key="test-key", transport=fake_transport)
+    request = ChatRequest(
+        messages=[Message(role="user", content="Describe Alice as JSON.")],
+        config=ModelConfig(model="test-model"),
+        structured_output=StructuredOutputConfig(
+            name="person",
+            schema={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+        ),
+    )
+
+    provider.chat(request)
+    payload = cast(dict[str, object], captured["payload"])
+    text_config = cast(dict[str, object], payload["text"])
+    format_config = cast(dict[str, object], text_config["format"])
+
+    assert format_config["type"] == "json_schema"
+    assert format_config["name"] == "person"
