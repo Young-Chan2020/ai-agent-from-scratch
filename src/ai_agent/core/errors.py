@@ -8,3 +8,7 @@ class InvalidRequestError(ProviderError):
 
 class ProviderUnavailableError(ProviderError):
     """Raised when a provider cannot currently serve the request."""
+
+
+class ToolExecutionError(Exception):
+    """Base error for failures in local Tool execution."""
