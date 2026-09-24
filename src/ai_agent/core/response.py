@@ -13,6 +13,25 @@ class Usage:
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    """A provider-independent request from an LLM to execute a Tool."""
+
+    id: str
+    name: str
+    arguments: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    """The provider-independent result produced by Tool execution."""
+
+    tool_call_id: str
+    name: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass(frozen=True)
 class ChatChunk:
     """A provider-independent piece of a streaming LLM response."""
 
@@ -29,4 +48,5 @@ class ChatResponse:
     message: Message
     finish_reason: str
     usage: Usage | None = None
+    tool_calls: list[ToolCall] | None = None
     raw: object | None = None
