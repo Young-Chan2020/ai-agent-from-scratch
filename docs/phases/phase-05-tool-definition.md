@@ -6,7 +6,9 @@ This phase introduces the abstraction that lets an Agent describe external capab
 
 - Understand what a Tool is.
 - Describe a Tool with a stable name, description, and input schema.
-- Understand the difference between Tool definition and Tool execution.
+- Understand how a ChatRequest carries all currently available Tool definitions.
+- Understand how the LLM chooses whether to use a Tool, which Tool to use, and what arguments to provide.
+- Understand the difference between Tool definition, Tool Call, and Tool execution.
 - Understand how Provider adapters translate one common Tool definition into vendor-specific formats.
 - Understand why the model chooses a Tool while the Agent runtime executes it.
 
@@ -28,7 +30,7 @@ arguments:
 }
 ```
 
-The LLM does not execute get_weather. It produces a structured request saying that it wants to use the Tool. The Agent runtime decides what happens next.
+The LLM does not execute `get_weather`. It produces a structured Tool Call saying that it wants to use the Tool. The Agent runtime decides what happens next.
 
 ### 2. Tool Definition vs Tool Execution
 
@@ -48,9 +50,106 @@ Tool Execution
     └── return result
 ```
 
-Phase 05 focuses on the first part. Phase 06 will build the second part.
+Phase 05 focuses on Tool Definition. Phase 06 will build Tool Execution.
 
-### 3. Why JSON Schema?
+### 3. The Request Carries the Available Tools
+
+A key part of Tool Calling is that the Agent sends the LLM the user message together with the Tool definitions that are currently available.
+
+```
+text
+ChatRequest
+├── messages
+│   └── user message
+└── tools
+    ├── get_weather
+    ├── search_web
+    └── get_time
+```
+
+The Agent does not send the Python function implementation to the LLM. It sends a description of each available capability: its name, description, and parameter schema.
+
+For example:
+
+```
+python
+request = ChatRequest(
+    messages=[
+        Message(
+            role="user",
+            content="What's the weather in Los Angeles?",
+        )
+    ],
+    config=ModelConfig(model="test-model"),
+    tools=[
+        get_weather.definition,
+        search_web.definition,
+        get_time.definition,
+    ],
+)
+```
+
+Conceptually, the model receives:
+
+```
+text
+User:
+What's the weather in Los Angeles?
+
+Available tools:
+- get_weather(city: string)
+- search_web(query: string)
+- get_time(timezone: string)
+```
+
+The model can then decide whether a Tool is needed and, if so, which Tool and arguments to request.
+
+### 4. Model Chooses; Runtime Executes
+
+The complete responsibility boundary is:
+
+```
+text
+User message
+     ↓
+Agent
+     │
+     │ ChatRequest:
+     │ - messages
+     │ - available Tool definitions
+     ▼
+LLM
+     │
+     │ decides:
+     │ 1. whether to call a Tool
+     │ 2. which Tool(s) to call
+     │ 3. what arguments to provide
+     ▼
+Tool Call
+     │
+     │ name + arguments
+     ▼
+Agent Runtime
+     │
+     │ find + validate + execute
+     ▼
+Tool
+     │
+     ▼
+Tool Result
+     │
+     ▼
+LLM
+     │
+     ▼
+Final Answer
+```
+
+The model makes the Tool Calling decision. The runtime owns execution.
+
+This distinction is important because the LLM should not directly execute arbitrary application code. The Agent runtime controls which registered Tool is actually invoked and can later enforce argument validation, permissions, timeouts, retries, and other runtime policies.
+
+### 5. Why JSON Schema?
 
 A model needs more than a Tool name. It needs to know which arguments it may provide and what their types are.
 
@@ -75,23 +174,6 @@ Structured Output
 Tool Definition
     Schema → shape of Tool arguments
 ```
-
-### 4. Model Chooses; Runtime Executes
-
-```
-text
-LLM
-  │
-  │ "I want to call get_weather"
-  ▼
-Agent Runtime
-  │
-  │ validate + execute
-  ▼
-Weather Tool
-```
-
-The model makes a decision; the runtime owns execution. This boundary becomes important when Phase 06 adds argument validation, exceptions, timeouts, retries, and permissions.
 
 ## Practical Examples
 
@@ -146,6 +228,8 @@ ChatRequest
         └── parameters
             └── city: string
 ```
+
+The important point is that `tools` represents the set of capabilities available to the model for this request. The Agent can provide multiple Tool definitions at the same time.
 
 ### Example 3 — Provider-specific request formats
 
@@ -216,9 +300,72 @@ json
 
 This is exactly where the Provider abstraction becomes useful: the Agent only creates one common ToolDefinition; the adapters hide vendor-specific details.
 
-### Example 4 — What the model may return
+### Example 4 — End-to-end Tool Calling flow
 
-After receiving the Tool definition and the user request, the model may decide to call it:
+Suppose the user asks:
+
+```
+text
+User:
+What's the weather in Los Angeles?
+```
+
+The Agent sends a request containing the user message and the available Tool definition:
+
+```
+python
+request = ChatRequest(
+    messages=[
+        Message(
+            role="user",
+            content="What's the weather in Los Angeles?",
+        )
+    ],
+    config=ModelConfig(model="test-model"),
+    tools=[
+        ToolDefinition(
+            name="get_weather",
+            description="Get the current weather for a city.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string"},
+                },
+                "required": ["city"],
+            },
+        )
+    ],
+)
+```
+
+Conceptually:
+
+```
+text
+Request
+│
+├── User message
+│   └── "What's the weather in Los Angeles?"
+│
+└── Available Tools
+    └── get_weather
+        ├── description
+        └── parameters
+            └── city: string
+```
+
+The LLM then reasons from the user message and the available Tool definitions. It may decide:
+
+```
+text
+Need current weather
+        ↓
+choose get_weather
+        ↓
+arguments = {"city": "Los Angeles"}
+```
+
+The model returns a Tool Call:
 
 ```
 json
@@ -230,53 +377,103 @@ json
 }
 ```
 
-This is a Tool Call decision, not the Tool result.
+This response means:
+
+> "Please execute `get_weather` with `city = Los Angeles`."
+
+It is **not** the Tool result. The LLM is requesting an action from the Agent runtime.
+
+The Agent then takes over:
 
 ```
 text
 LLM
  ↓
-tool call
+Tool Call
+ │
+ │ name = get_weather
+ │ arguments = {"city": "Los Angeles"}
  ↓
 Agent Runtime
  ↓
 validate arguments
  ↓
-execute get_weather
+execute get_weather(...)
  ↓
-tool result
+Tool Result
+ │
+ │ "22°C, Sunny"
  ↓
 LLM
+ ↓
+Final Answer
+ │
+ │ "It's 22°C and sunny in Los Angeles."
+ ↓
+User
 ```
 
-Phase 05 stops before execution. The current common ChatResponse does not yet normalize provider-specific tool-call responses; that will be addressed in Phase 06.
+The exact Tool result is only an example; the important protocol is that the runtime executes the requested Tool and returns its result to the LLM, which can then produce the final answer.
+
+### Example 5 — Multiple Tools
+
+The same request can expose several Tools:
+
+```
+text
+Available Tools
+├── get_weather(city)
+├── search_web(query)
+└── get_time(timezone)
+```
+
+The model may choose one Tool, or in APIs that support it, request multiple Tool Calls. The Agent runtime should treat each Tool Call as a request to execute a registered Tool rather than as executable code supplied by the model.
+
+Phase 05 defines the available Tool interface. Phase 06 will implement how these Tool Calls are normalized, validated, dispatched, and returned as Tool results.
 
 ## Architecture
 
 ```
 text
+User
+ │
+ │ user message
+ ▼
 Agent Runtime
-      │
-      ▼
-ToolDefinition
- ┌──────┼──────┐
- ▼      ▼      ▼
-name  description schema
-      │
-      ▼
-   Provider
- ┌──────┼──────┐
- ▼      ▼      ▼
-OpenAI Anthropic DeepSeek
-      │
-      ▼
-     LLM
-      │
-      ▼
-   Tool Call
-      │
-      ▼
-Phase 06 Execution
+ │
+ │ ChatRequest
+ │ ├── messages
+ │ └── available ToolDefinitions
+ ▼
+Provider
+ │
+ ├── OpenAI adapter
+ ├── Anthropic adapter
+ └── DeepSeek adapter
+ │
+ ▼
+LLM
+ │
+ │ chooses Tool(s)
+ ▼
+Tool Call
+ │
+ │ name + arguments
+ ▼
+Agent Runtime
+ │
+ │ Phase 06 execution
+ ▼
+Tool
+ │
+ ▼
+Tool Result
+ │
+ ▼
+LLM
+ │
+ ▼
+Final Answer
 ```
 
 ## Implementation Mapping
@@ -286,11 +483,12 @@ Phase 06 Execution
 | Provider-independent Tool definition | src/ai_agent/core/tool.py | ToolDefinition |
 | Runtime Tool registration object | src/ai_agent/core/tool.py | Tool |
 | Tool handler type | src/ai_agent/core/tool.py | ToolHandler |
-| Request-level tool definitions | src/ai_agent/core/request.py | ChatRequest.tools |
+| Request-level available Tool definitions | src/ai_agent/core/request.py | ChatRequest.tools |
 | Duplicate tool-name validation | src/ai_agent/core/request.py | ChatRequest.__post_init__() |
 | OpenAI mapping | src/ai_agent/providers/openai.py | _build_payload() |
 | Anthropic mapping | src/ai_agent/providers/anthropic.py | _build_payload() |
 | DeepSeek mapping | src/ai_agent/providers/deepseek.py | _build_payload() |
+| Tool Call normalization and execution | Phase 06 | Not implemented yet |
 
 ## Tests
 
@@ -305,6 +503,14 @@ Tests use fake transports, so no real API calls are required.
 ### Why separate ToolDefinition from Tool?
 
 The LLM only needs the public contract: name, description, and parameter schema. The runtime also needs executable behavior: a handler. Separating them keeps the provider boundary clean and gives Phase 06 a clear execution boundary.
+
+### Why put available Tools on ChatRequest?
+
+Tool availability is request-specific. Different Agent states, user permissions, or application contexts may expose different Tools. Putting Tool definitions on the request makes the model's available capabilities explicit for that LLM call.
+
+### Why let the LLM choose the Tool but keep execution in the runtime?
+
+The model is good at interpreting natural-language intent and selecting from described capabilities. The runtime must remain in control of actual execution because execution can affect external systems, data, or application state.
 
 ### Why use JSON Schema?
 
@@ -326,28 +532,32 @@ Execution introduces argument validation, exceptions, timeouts, retries, and per
 - No timeout, retry, permission, or sandboxing layer exists yet.
 - The parameter schema uses the small JSON Schema subset from Phase 04.
 - Vendor-specific capabilities can evolve.
+- Multiple Tool Calls are described conceptually here; their provider-specific response formats will be handled in Phase 06.
 
 ## Interview Questions
 
-1. What information should a Tool definition expose to an LLM?
-2. Why should Tool parameters use a schema?
-3. What is the difference between Tool definition and Tool execution?
-4. Why should the LLM not directly execute a Tool?
-5. How would you validate Tool arguments before execution?
-6. How do OpenAI, Anthropic, and DeepSeek represent function Tools differently?
-7. Why should the Agent runtime depend on a provider-independent Tool abstraction?
-8. What security problems appear once an LLM can request external actions?
-9. Where should timeout, retry, and permission checks live?
+1. Where are available Tools represented in an Agent request?
+2. What information should a Tool definition expose to an LLM?
+3. How does the LLM decide which Tool to call?
+4. What is the difference between a Tool Definition, Tool Call, and Tool Result?
+5. Why should the LLM not directly execute a Tool?
+6. Why should Tool parameters use a schema?
+7. How would you validate Tool arguments before execution?
+8. How do OpenAI, Anthropic, and DeepSeek represent function Tools differently?
+9. Why should the Agent runtime depend on a provider-independent Tool abstraction?
 10. How would you represent a Tool Call in a provider-independent ChatResponse?
+11. Where should timeout, retry, and permission checks live?
+12. What security problems appear once an LLM can request external actions?
 
 ## Phase Completion Checklist
 
 - [ ] Tool abstraction understood.
 - [ ] Tool name and description understood.
 - [ ] Tool parameter schema understood.
+- [ ] ChatRequest carries the currently available Tool definitions.
+- [ ] LLM → Tool Call → Runtime → Tool Result flow understood.
 - [ ] ToolDefinition implemented.
 - [ ] Runtime Tool wrapper implemented.
-- [ ] ChatRequest can carry Tool definitions.
 - [ ] OpenAI tool mapping implemented.
 - [ ] Anthropic tool mapping implemented.
 - [ ] DeepSeek tool mapping implemented.
@@ -369,9 +579,15 @@ ChatRequest.tools
         ↓
 Provider-specific _build_payload()
         ↓
-LLM tool definition
+LLM receives available Tool definitions
         ↓
-Tool call
+LLM chooses Tool(s) + arguments
+        ↓
+Tool Call
         ↓
 Phase 06 Tool Execution
+        ↓
+Tool Result
+        ↓
+LLM final answer
 ```
