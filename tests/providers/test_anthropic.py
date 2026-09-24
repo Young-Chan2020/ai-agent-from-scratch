@@ -81,3 +81,34 @@ def test_anthropic_provider_streams_text_deltas() -> None:
     assert chunks[-1].finish_reason == "end_turn"
     assert chunks[-1].usage is not None
     assert chunks[-1].usage.total_tokens == 6
+
+
+def test_anthropic_provider_instructs_structured_json_output() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transport(url: str, headers: dict[str, str], payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {
+            "content": [{"type": "text", "text": '{"name":"Alice"}'}],
+            "stop_reason": "end_turn",
+        }
+
+    provider = AnthropicProvider(api_key="test-key", transport=fake_transport)
+    request = ChatRequest(
+        messages=[Message(role="user", content="Return JSON.")],
+        config=ModelConfig(model="test-model"),
+        structured_output=StructuredOutputConfig(
+            name="person",
+            schema={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+        ),
+    )
+
+    provider.chat(request)
+    payload = captured["payload"]
+
+    assert "Return only valid JSON" in payload["system"]
+    assert '"name"' in payload["system"]
