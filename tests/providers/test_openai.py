@@ -133,3 +133,31 @@ def test_openai_provider_maps_tool_definition() -> None:
             "strict": False,
         }
     ]
+
+def test_openai_provider_parses_tool_call() -> None:
+    from ai_agent.core.response import ToolCall
+
+    provider = OpenAIProvider(
+        api_key="test-key",
+        transport=lambda url, headers, payload: {
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "get_weather",
+                    "arguments": '{"city":"Los Angeles"}',
+                }
+            ],
+            "status": "completed",
+        },
+    )
+    response = provider.chat(
+        ChatRequest(
+            messages=[Message(role="user", content="weather?")],
+            config=ModelConfig(model="test"),
+        )
+    )
+
+    assert response.tool_calls == [
+        ToolCall(id="call-1", name="get_weather", arguments={"city": "Los Angeles"})
+    ]
