@@ -3,6 +3,7 @@ import pytest
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
 from ai_agent.core.response import ChatChunk, Usage
+from ai_agent.core.tool import ToolDefinition
 
 
 def test_message_keeps_provider_independent_fields() -> None:
@@ -56,3 +57,37 @@ def test_chat_chunk_can_carry_completion_metadata() -> None:
     assert chunk.finish_reason == "stop"
     assert chunk.usage is not None
     assert chunk.usage.total_tokens == 15
+
+
+def test_chat_request_accepts_tool_definitions() -> None:
+    tool = ToolDefinition(
+        name="calculator",
+        description="Calculate an arithmetic expression.",
+        parameters={
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"],
+        },
+    )
+    request = ChatRequest(
+        messages=[Message(role="user", content="Calculate 2 + 2.")],
+        config=ModelConfig(model="test-model"),
+        tools=[tool],
+    )
+
+    assert request.tools == [tool]
+
+
+def test_chat_request_rejects_duplicate_tool_names() -> None:
+    tool = ToolDefinition(
+        name="calculator",
+        description="Calculate an arithmetic expression.",
+        parameters={"type": "object"},
+    )
+
+    with pytest.raises(ValueError, match="tool names must be unique"):
+        ChatRequest(
+            messages=[Message(role="user", content="Calculate 2 + 2.")],
+            config=ModelConfig(model="test-model"),
+            tools=[tool, tool],
+        )
