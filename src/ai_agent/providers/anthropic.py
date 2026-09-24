@@ -80,6 +80,18 @@ class AnthropicProvider:
             ],
         }
 
+        if request.tools:
+            # English: Anthropic calls the tool input schema input_schema rather than parameters.
+            # 中文：Anthropic 使用 input_schema 表示 Tool 的 arguments schema，而不是 parameters。
+            payload["tools"] = [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.parameters,
+                }
+                for tool in request.tools
+            ]
+
         if request.structured_output is not None:
             # English: Anthropic receives the schema as an instruction, while our common layer validates the result.
             # 中文：Anthropic 在這裡透過 instruction 傳遞 schema，而 common layer 負責最終 validation。
