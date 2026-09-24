@@ -74,6 +74,22 @@ class DeepSeekProvider:
         if request.config.max_tokens is not None:
             payload["max_tokens"] = request.config.max_tokens
 
+        if request.tools:
+            # English: DeepSeek's Chat Completions API uses the common function-tool shape.
+            # 中文：DeepSeek Chat Completions API 使用標準的 function tool 結構。
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                        "strict": tool.strict,
+                    },
+                }
+                for tool in request.tools
+            ]
+
         if request.structured_output is not None:
             # English: DeepSeek's JSON mode guarantees valid JSON, while schema validation remains our responsibility.
             # 中文：DeepSeek 的 JSON mode 保證輸出是合法 JSON，但 schema validation 仍由我們自己的 common layer 負責。
