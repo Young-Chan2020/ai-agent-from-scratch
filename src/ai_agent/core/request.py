@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .message import Message
+from .structured import StructuredOutputConfig
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class ChatRequest:
     messages: list[Message]
     config: ModelConfig
     stream: bool = False
+    structured_output: StructuredOutputConfig | None = None
 
     def __post_init__(self) -> None:
         # English: A chat request needs at least one message so the provider has input context.

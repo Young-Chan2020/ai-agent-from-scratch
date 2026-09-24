@@ -2,6 +2,7 @@ from typing import cast
 
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
+from ai_agent.core.structured import StructuredOutputConfig
 from ai_agent.providers.deepseek import DeepSeekProvider
 
 
@@ -67,3 +68,37 @@ def test_deepseek_provider_streams_chat_completion_deltas() -> None:
     assert chunks[-1].finish_reason == "stop"
     assert chunks[-1].usage is not None
     assert chunks[-1].usage.total_tokens == 5
+
+
+def test_deepseek_provider_enables_json_output() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transport(url: str, headers: dict[str, str], payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": '{"name":"Alice"}'},
+                }
+            ]
+        }
+
+    provider = DeepSeekProvider(api_key="test-key", transport=fake_transport)
+    request = ChatRequest(
+        messages=[Message(role="user", content="Return JSON.")],
+        config=ModelConfig(model="deepseek-chat"),
+        structured_output=StructuredOutputConfig(
+            name="person",
+            schema={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+        ),
+    )
+
+    provider.chat(request)
+    payload = cast(dict[str, object], captured["payload"])
+
+    assert payload["response_format"] == {"type": "json_object"}
