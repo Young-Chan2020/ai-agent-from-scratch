@@ -38,41 +38,56 @@ def parse_structured_output(
     if not isinstance(value, dict):
         raise StructuredOutputError("structured output must be a JSON object")
 
-    _validate_value(value, schema, "$")
+    validate_json_schema(value, schema, error_cls=StructuredOutputError)
     return value
 
 
-def _validate_value(value: Any, schema: dict[str, object], path: str) -> None:
+def validate_json_schema(
+    value: Any,
+    schema: dict[str, object],
+    *,
+    error_cls: type[Exception] = StructuredOutputError,
+) -> None:
+    """Validate a small JSON Schema subset shared by structured output and Tools."""
+    _validate_value(value, schema, "$", error_cls)
+
+
+def _validate_value(
+    value: Any,
+    schema: dict[str, object],
+    path: str,
+    error_cls: type[Exception],
+) -> None:
     expected_type = schema.get("type")
 
     if expected_type == "object":
         if not isinstance(value, dict):
-            raise StructuredOutputError(f"{path} must be an object")
+            raise error_cls(f"{path} must be an object")
 
         properties = schema.get("properties", {})
         if not isinstance(properties, dict):
-            raise StructuredOutputError(f"{path}.properties must be an object")
+            raise error_cls(f"{path}.properties must be an object")
 
         required = schema.get("required", [])
         if not isinstance(required, list):
-            raise StructuredOutputError(f"{path}.required must be an array")
+            raise error_cls(f"{path}.required must be an array")
 
         for name in required:
             if isinstance(name, str) and name not in value:
-                raise StructuredOutputError(f"{path}.{name} is required")
+                raise error_cls(f"{path}.{name} is required")
 
         for name, child_schema in properties.items():
             if name in value and isinstance(child_schema, dict):
-                _validate_value(value[name], child_schema, f"{path}.{name}")
+                _validate_value(value[name], child_schema, f"{path}.{name}", error_cls)
         return
 
     if expected_type == "array":
         if not isinstance(value, list):
-            raise StructuredOutputError(f"{path} must be an array")
+            raise error_cls(f"{path} must be an array")
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
             for index, item in enumerate(value):
-                _validate_value(item, item_schema, f"{path}[{index}]")
+                _validate_value(item, item_schema, f"{path}[{index}]", error_cls)
         return
 
     type_checks = {
@@ -85,9 +100,7 @@ def _validate_value(value: Any, schema: dict[str, object], path: str) -> None:
 
     check = type_checks.get(expected_type)
     if check is None:
-        raise StructuredOutputError(
-            f"{path} uses unsupported schema type: {expected_type!r}"
-        )
+        raise error_cls(f"{path} uses unsupported schema type: {expected_type!r}")
 
     if not check(value):
-        raise StructuredOutputError(f"{path} must be {expected_type}")
+        raise error_cls(f"{path} must be {expected_type}")
