@@ -79,6 +79,18 @@ class AnthropicProvider:
             ],
         }
 
+        if request.structured_output is not None:
+            # English: Anthropic receives the schema as an instruction, while our common layer validates the result.
+            # 中文：Anthropic 在這裡透過 instruction 傳遞 schema，而 common layer 負責最終 validation。
+            schema_text = str(request.structured_output.schema)
+            system_messages = [
+                *system_messages,
+                (
+                    "Return only valid JSON matching this schema: "
+                    f"{schema_text}"
+                ),
+            ]
+
         if system_messages:
             payload["system"] = "\n\n".join(system_messages)
 
