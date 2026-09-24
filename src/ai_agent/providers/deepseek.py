@@ -74,6 +74,11 @@ class DeepSeekProvider:
         if request.config.max_tokens is not None:
             payload["max_tokens"] = request.config.max_tokens
 
+        if request.structured_output is not None:
+            # English: DeepSeek's JSON mode guarantees valid JSON, while schema validation remains our responsibility.
+            # 中文：DeepSeek 的 JSON mode 保證輸出是合法 JSON，但 schema validation 仍由我們自己的 common layer 負責。
+            payload["response_format"] = {"type": "json_object"}
+
         return payload
 
     @staticmethod
