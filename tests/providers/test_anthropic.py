@@ -1,6 +1,9 @@
+from typing import cast
+
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
 from ai_agent.core.structured import StructuredOutputConfig
+from ai_agent.core.tool import ToolDefinition
 from ai_agent.providers.anthropic import AnthropicProvider
 
 
@@ -113,3 +116,42 @@ def test_anthropic_provider_instructs_structured_json_output() -> None:
 
     assert "Return only valid JSON" in payload["system"]
     assert '"name"' in payload["system"]
+
+
+def test_anthropic_provider_maps_tool_definition() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transport(url: str, headers: dict[str, str], payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {
+            "content": [{"type": "text", "text": "hello"}],
+            "stop_reason": "end_turn",
+        }
+
+    provider = AnthropicProvider(api_key="test-key", transport=fake_transport)
+    tool = ToolDefinition(
+        name="get_weather",
+        description="Get the weather for a city.",
+        parameters={
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    )
+    request = ChatRequest(
+        messages=[Message(role="user", content="Weather in LA?")],
+        config=ModelConfig(model="test-model"),
+        tools=[tool],
+    )
+
+    provider.chat(request)
+    payload = cast(dict[str, object], captured["payload"])
+    tools = cast(list[dict[str, object]], payload["tools"])
+
+    assert tools == [
+        {
+            "name": "get_weather",
+            "description": "Get the weather for a city.",
+            "input_schema": tool.parameters,
+        }
+    ]

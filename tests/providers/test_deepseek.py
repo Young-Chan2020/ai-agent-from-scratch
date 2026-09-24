@@ -3,6 +3,7 @@ from typing import cast
 from ai_agent.core.message import Message
 from ai_agent.core.request import ChatRequest, ModelConfig
 from ai_agent.core.structured import StructuredOutputConfig
+from ai_agent.core.tool import ToolDefinition
 from ai_agent.providers.deepseek import DeepSeekProvider
 
 
@@ -102,3 +103,50 @@ def test_deepseek_provider_enables_json_output() -> None:
     payload = cast(dict[str, object], captured["payload"])
 
     assert payload["response_format"] == {"type": "json_object"}
+
+
+def test_deepseek_provider_maps_tool_definition() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transport(url: str, headers: dict[str, str], payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "hello"},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+
+    provider = DeepSeekProvider(api_key="test-key", transport=fake_transport)
+    tool = ToolDefinition(
+        name="get_weather",
+        description="Get the weather for a city.",
+        parameters={
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    )
+    request = ChatRequest(
+        messages=[Message(role="user", content="Weather in LA?")],
+        config=ModelConfig(model="test-model"),
+        tools=[tool],
+    )
+
+    provider.chat(request)
+    payload = cast(dict[str, object], captured["payload"])
+    tools = cast(list[dict[str, object]], payload["tools"])
+
+    assert tools == [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the weather for a city.",
+                "parameters": tool.parameters,
+                "strict": False,
+            },
+        }
+    ]

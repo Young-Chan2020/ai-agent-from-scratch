@@ -73,6 +73,20 @@ class OpenAIProvider:
         if request.config.max_tokens is not None:
             payload["max_output_tokens"] = request.config.max_tokens
 
+        if request.tools:
+            # English: OpenAI's Responses API expects function tools as top-level tool definitions.
+            # 中文：OpenAI Responses API 將 function tool definitions 放在 request 的 tools 欄位。
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                    "strict": tool.strict,
+                }
+                for tool in request.tools
+            ]
+
         if request.structured_output is not None:
             structured = request.structured_output
             # English: OpenAI supports JSON Schema directly, so the adapter can pass the schema natively.
