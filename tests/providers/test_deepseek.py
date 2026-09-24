@@ -150,3 +150,41 @@ def test_deepseek_provider_maps_tool_definition() -> None:
             },
         }
     ]
+
+def test_deepseek_provider_parses_tool_call() -> None:
+    from ai_agent.core.response import ToolCall
+
+    provider = DeepSeekProvider(
+        api_key="test-key",
+        transport=lambda url, headers, payload: {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"city":"Los Angeles"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ]
+        },
+    )
+    response = provider.chat(
+        ChatRequest(
+            messages=[Message(role="user", content="weather?")],
+            config=ModelConfig(model="test"),
+        )
+    )
+
+    assert response.tool_calls == [
+        ToolCall(id="call-1", name="get_weather", arguments={"city": "Los Angeles"})
+    ]
