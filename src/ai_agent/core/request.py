@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .message import Message
 from .structured import StructuredOutputConfig
+from .tool import ToolDefinition
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class ChatRequest:
     config: ModelConfig
     stream: bool = False
     structured_output: StructuredOutputConfig | None = None
+    tools: list[ToolDefinition] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # English: A chat request needs at least one message so the provider has input context.
@@ -35,5 +37,12 @@ class ChatRequest:
 
         # English: max_tokens limits the generated output and therefore cannot be zero or negative.
         # 中文：max_tokens 用來限制生成內容長度，因此不能是零或負數。
+
         if self.config.max_tokens is not None and self.config.max_tokens <= 0:
             raise ValueError("max_tokens must be positive")
+
+        # English: Duplicate names would make a model-generated tool call ambiguous.
+        # 中文：Tool name 如果重複，LLM 選擇工具時會產生歧義，因此在 request boundary 直接拒絕。
+        names = [tool.name for tool in self.tools]
+        if len(names) != len(set(names)):
+            raise ValueError("tool names must be unique")
