@@ -92,6 +92,153 @@ Structured output 是「請按照這個格式回傳資料」。Tool calling 是�
 
 Tests 都使用 fake transport，因此不需要真正呼叫 API。
 
+## 實際例子
+
+下面幾個例子把完整的 Request → Response 流程放在一起。最重要的是：**schema 描述的是 response 應該長什麼樣子；schema 本身不是 response。**
+
+### 例子 1 — 把資訊抽成結構化資料
+
+Application 要求 LLM 從一句話中抽取人物資訊：
+
+```python
+ChatRequest(
+    messages=[
+        Message(
+            role="user",
+            content="Albert Einstein was born in 1879 and was a physicist.",
+        )
+    ],
+    config=ModelConfig(model="gpt-5"),
+    structured_output=StructuredOutputConfig(
+        name="person",
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "birth_year": {"type": "integer"},
+                "occupation": {"type": "string"},
+            },
+            "required": ["name", "birth_year", "occupation"],
+        },
+    ),
+)
+```
+
+Response 在 `ChatResponse.message.content` 裡仍然是文字，但這段文字應該包含符合 schema 的資料：
+
+```json
+{
+    "name": "Albert Einstein",
+    "birth_year": 1879,
+    "occupation": "physicist"
+}
+```
+
+這裡可以清楚看到：schema 定義的是 **application 想要哪些資訊**，response 才包含真正的值。
+
+### 例子 2 — Structured Output 裡面仍然可以有「人話」
+
+Structured Output 並不代表每個欄位都必須是純機器資料。我們可以在 schema 裡明確提供一個自然語言描述欄位：
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "birth_year": {"type": "integer"},
+    },
+    "required": ["name", "description", "birth_year"],
+}
+```
+
+對應的 response 可以是：
+
+```json
+{
+    "name": "Albert Einstein",
+    "description": "Albert Einstein was a famous physicist best known for developing the theory of relativity.",
+    "birth_year": 1879
+}
+```
+
+這裡真正的自然語言句子是在 **response 的 `description` 欄位**裡，而不是放在 schema 本身。
+
+### 例子 3 — Agent 使用 Structured Output
+
+當 response 不是直接給 user 看，而是交給程式邏輯處理時，Structured Output 就特別有用。
+
+例如 Agent 可以要求 LLM 把 user 的需求轉成 Weather Tool 可以使用的資料：
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "city": {"type": "string"},
+        "unit": {"type": "string"},
+    },
+    "required": ["city", "unit"],
+}
+```
+
+Request：
+
+```text
+User: What's the weather in Los Angeles?
+```
+
+Response：
+
+```json
+{
+    "city": "Los Angeles",
+    "unit": "celsius"
+}
+```
+
+Agent 接著可以使用解析後的資料：
+
+```python
+weather_tool(city="Los Angeles", unit="celsius")
+```
+
+這個例子裡，structured response 是 **給 machine / Agent runtime 使用的**，不是直接給 user 閱讀。這也是 Structured Output 為什麼會成為 Agent 系統重要基礎能力的原因之一。
+
+### 例子 4 — 人話與結構化資料同時存在
+
+Schema 也可以同時包含 machine-oriented fields 和自然語言回答：
+
+```python
+schema = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "temperature": {"type": "number"},
+        "rain_probability": {"type": "number"},
+        "bring_umbrella": {"type": "boolean"},
+    },
+    "required": [
+        "answer",
+        "temperature",
+        "rain_probability",
+        "bring_umbrella",
+    ],
+}
+```
+
+Response：
+
+```json
+{
+    "answer": "It looks fairly dry today, so you probably won't need an umbrella.",
+    "temperature": 22.5,
+    "rain_probability": 10,
+    "bring_umbrella": false
+}
+```
+
+這裡可以看到一個很重要的設計概念：**Structured Output 控制的是 LLM 與 application 之間的 interface，而不是把 LLM 的自然語言能力拿掉。**
+
 ## Design Decisions
 ### 為什麼 schema 放在 common request？
 Agent 只需要表達一次 intent，之後由各 Provider Adapter 把這個 intent 轉換成不同 vendor 的 API 格式。
